@@ -3,8 +3,10 @@ package com.brightwood.students;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.UUID;
+import java.util.Objects;
 
 import com.brightwood.students.student.Student;
+import org.springframework.lang.NonNull;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -54,9 +56,9 @@ class SchoolModulesIntegrationTest {
                 .postForEntity("/api/students", request, Student.class);
 
         assertThat(created.getStatusCode()).isEqualTo(HttpStatus.CREATED);
-        assertThat(created.getBody()).isNotNull();
-        assertThat(created.getBody().admissionNumber()).isEqualTo(admissionNumber);
-        assertThat(created.getBody().guardianName()).isEqualTo("Demo Parent");
+        Student createdStudent = Objects.requireNonNull(created.getBody());
+        assertThat(createdStudent.admissionNumber()).isEqualTo(admissionNumber);
+        assertThat(createdStudent.guardianName()).isEqualTo("Demo Parent");
 
         try {
             Student[] fetched = restTemplate.withBasicAuth("admin@pandey.edu", "AdminDemo2026!")
@@ -67,7 +69,7 @@ class SchoolModulesIntegrationTest {
             });
         } finally {
             restTemplate.withBasicAuth("admin@pandey.edu", "AdminDemo2026!")
-                    .delete("/api/students/{id}", created.getBody().id());
+                    .delete("/api/students/{id}", createdStudent.id());
         }
     }
 
@@ -236,7 +238,8 @@ class SchoolModulesIntegrationTest {
         ResponseEntity<String> studentCsv = restTemplate.withBasicAuth(admin, "AdminDemo2026!")
                 .getForEntity("/api/reports/students.csv", String.class);
         assertThat(studentCsv.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(studentCsv.getHeaders().getContentType().toString()).startsWith("text/csv");
+        assertThat(Objects.requireNonNull(studentCsv.getHeaders().getContentType()).toString())
+                .startsWith("text/csv");
         assertThat(studentCsv.getBody()).contains("Admission number,Name").contains(linkedStudent.name());
 
         ResponseEntity<String> attendanceCsv = restTemplate.withBasicAuth(admin, "AdminDemo2026!")
@@ -261,10 +264,14 @@ class SchoolModulesIntegrationTest {
                 .getForObject("/api/students", Student[].class)[0];
     }
 
-    private static HttpEntity<String> jsonRequest(String body, String username, String password) {
+    private static HttpEntity<String> jsonRequest(
+            String body,
+            @NonNull String username,
+            @NonNull String password
+    ) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setBasicAuth(username, password);
-        return new HttpEntity<>(body, headers);
+        return new HttpEntity<>(Objects.requireNonNull(body), headers);
     }
 }

@@ -69,47 +69,52 @@ public class AccountController {
             throw new IllegalArgumentException("A guardian account must be linked to an existing student.");
         }
 
-        @DeleteMapping("/{id}")
-        @org.springframework.web.bind.annotation.ResponseStatus(org.springframework.http.HttpStatus.NO_CONTENT)
-        public void delete(@PathVariable long id, Authentication authentication) {
-            SchoolUserPrincipal currentUser = (SchoolUserPrincipal) authentication.getPrincipal();
-            if (currentUser.id() == id) {
-                throw new IllegalArgumentException("You cannot delete your own signed-in account.");
-            }
-            String username = jdbcTemplate.query(
-                    "SELECT username FROM users WHERE id = ?",
-                    resultSet -> resultSet.next() ? resultSet.getString(1) : null,
-                    id
-            );
-            if (username == null) {
-                throw new IllegalArgumentException("User account was not found.");
-            }
-            Integer administratorCount = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM users WHERE role = 'ADMIN'",
-                    Integer.class
-            );
-            String role = jdbcTemplate.queryForObject(
-                    "SELECT role FROM users WHERE id = ?", String.class, id);
-            if ("ADMIN".equals(role) && administratorCount != null && administratorCount <= 1) {
-                throw new IllegalArgumentException("The last administrator account cannot be removed.");
-            }
-            jdbcTemplate.update("DELETE FROM users WHERE id = ?", id);
-            auditService.record(authentication, "DELETE", "USER", Long.toString(id),
-                    "Deleted account " + username);
-        }
         jdbcTemplate.update("""
                 INSERT INTO users (username, password_hash, role, student_id)
                 VALUES (?, ?, ?, ?)
                 """, request.username().trim().toLowerCase(),
                 passwordEncoder.encode(request.password()), role, studentId);
-        long id = jdbcTemplate.queryForObject(
+        Long createdId = jdbcTemplate.queryForObject(
                 "SELECT id FROM users WHERE username = ? COLLATE NOCASE",
                 Long.class, request.username().trim());
+        if (createdId == null) {
+            throw new IllegalStateException("Created account could not be read.");
+        }
+        long id = createdId;
         auditService.record(authentication, "CREATE", "USER", Long.toString(id),
                 "Created " + role + " account " + request.username().trim());
         return new Account(id, request.username().trim(), role, studentId,
                 studentId == null ? null : jdbcTemplate.queryForObject(
                         "SELECT name FROM students WHERE id = ?", String.class, studentId));
+    }
+
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(@PathVariable long id, Authentication authentication) {
+        SchoolUserPrincipal currentUser = (SchoolUserPrincipal) authentication.getPrincipal();
+        if (currentUser.id() == id) {
+            throw new IllegalArgumentException("You cannot delete your own signed-in account.");
+        }
+        String username = jdbcTemplate.query(
+                "SELECT username FROM users WHERE id = ?",
+                resultSet -> resultSet.next() ? resultSet.getString(1) : null,
+                id
+        );
+        if (username == null) {
+            throw new IllegalArgumentException("User account was not found.");
+        }
+        Integer administratorCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM users WHERE role = 'ADMIN'",
+                Integer.class
+        );
+        String role = jdbcTemplate.queryForObject(
+                "SELECT role FROM users WHERE id = ?", String.class, id);
+        if ("ADMIN".equals(role) && administratorCount != null && administratorCount <= 1) {
+            throw new IllegalArgumentException("The last administrator account cannot be removed.");
+        }
+        jdbcTemplate.update("DELETE FROM users WHERE id = ?", id);
+        auditService.record(authentication, "DELETE", "USER", Long.toString(id),
+                "Deleted account " + username);
     }
 
     public record CreateAccountRequest(

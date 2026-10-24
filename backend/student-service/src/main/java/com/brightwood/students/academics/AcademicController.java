@@ -87,6 +87,9 @@ public class AcademicController {
                 VALUES (?, ?, ?, ?, ?, ?) RETURNING id
                 """, Long.class, request.studentId(), request.subject().trim(), request.term().trim(),
                 request.score(), trimToNull(request.remarks()), user.id());
+        if (id == null) {
+            throw new IllegalStateException("Created academic record could not be read.");
+        }
         auditService.record(authentication, "CREATE", "ACADEMIC_RECORD", id.toString(),
                 request.subject().trim() + " / " + request.term().trim());
         return list(request.studentId(), user).stream()

@@ -113,7 +113,7 @@ public class ReportsController {
         return csvResponse(csv, "academic-records.csv");
     }
 
-    private long count(String sql) {
+    private long count(@org.springframework.lang.NonNull String sql) {
         Long result = jdbcTemplate.queryForObject(sql, Long.class);
         return result == null ? 0 : result;
     }
@@ -141,7 +141,7 @@ public class ReportsController {
 
     private static ResponseEntity<byte[]> csvResponse(StringBuilder csv, String filename) {
         return ResponseEntity.ok()
-                .contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))
+                .contentType(MediaType.parseMediaType("text/csv;charset=UTF-8"))
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
                 .body(csv.toString().getBytes(StandardCharsets.UTF_8));
     }

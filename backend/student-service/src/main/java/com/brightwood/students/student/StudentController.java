@@ -61,10 +61,15 @@ public class StudentController {
                 .filter(student -> grade == null || grade.isBlank() || student.grade().equals(grade))
                 .filter(student -> status == null || status.isBlank() || student.status().equals(status))
                 .sorted(switch (sort == null ? "name" : sort) {
-                    case "grade" -> java.util.Comparator.comparing(Student::grade).thenComparing(Student::name);
-                    case "admissionNumber" -> java.util.Comparator.comparing(Student::admissionNumber);
-                    case "newest" -> java.util.Comparator.comparingLong(Student::id).reversed();
-                    default -> java.util.Comparator.comparing(Student::name, String.CASE_INSENSITIVE_ORDER);
+                    case "grade" -> java.util.Comparator
+                            .comparing((Student student) -> student.grade())
+                            .thenComparing(student -> student.name());
+                    case "admissionNumber" -> java.util.Comparator
+                            .comparing((Student student) -> student.admissionNumber());
+                    case "newest" -> java.util.Comparator
+                            .comparingLong((Student student) -> student.id()).reversed();
+                    default -> java.util.Comparator
+                            .comparing((Student student) -> student.name(), String.CASE_INSENSITIVE_ORDER);
                 })
                 .toList();
     }
