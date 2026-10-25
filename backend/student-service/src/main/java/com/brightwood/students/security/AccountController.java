@@ -75,7 +75,7 @@ public class AccountController {
                 """, request.username().trim().toLowerCase(),
                 passwordEncoder.encode(request.password()), role, studentId);
         Long createdId = jdbcTemplate.queryForObject(
-                "SELECT id FROM users WHERE username = ? COLLATE NOCASE",
+                "SELECT id FROM users WHERE lower(username) = lower(?)",
                 Long.class, request.username().trim());
         if (createdId == null) {
             throw new IllegalStateException("Created account could not be read.");

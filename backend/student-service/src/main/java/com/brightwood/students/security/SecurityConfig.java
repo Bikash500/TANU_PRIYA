@@ -34,7 +34,8 @@ public class SecurityConfig {
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/api/health", "/error").permitAll()
+                        .requestMatchers("/", "/index.html", "/assets/**", "/school-campus.svg",
+                                "/favicon.ico", "/api/health", "/error").permitAll()
                         .anyRequest().authenticated())
                 .httpBasic(Customizer.withDefaults())
                 .build();

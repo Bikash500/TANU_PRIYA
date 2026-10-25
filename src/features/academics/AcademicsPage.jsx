@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { apiRequest, jsonBody } from "../../api.js";
 
 export default function AcademicsPage({ credentials, user }) {

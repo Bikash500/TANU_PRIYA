@@ -33,7 +33,7 @@ public class ReportsController {
                 count("SELECT COUNT(*) FROM students WHERE status = 'ACTIVE'"),
                 count("SELECT COUNT(*) FROM students"),
                 count("SELECT COUNT(DISTINCT grade) FROM students"),
-                count("SELECT COUNT(*) FROM attendance WHERE attendance_date = date('now') AND status = 'PRESENT'"),
+                count("SELECT COUNT(*) FROM attendance WHERE attendance_date = CAST(CURRENT_DATE AS TEXT) AND status = 'PRESENT'"),
                 count("SELECT COUNT(*) FROM academic_records")
         );
     }

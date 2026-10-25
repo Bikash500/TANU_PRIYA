@@ -9,8 +9,10 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
+import org.springframework.context.annotation.Profile;
 
 @Component
+@Profile("!production")
 public class DatabaseInitializer implements ApplicationRunner {
 
     private final JdbcTemplate jdbcTemplate;
@@ -26,6 +28,7 @@ public class DatabaseInitializer implements ApplicationRunner {
         migrateStudents();
         createModuleTables();
         seedDemoStudents();
+        seedAcademicStructure();
         seedDemoUsers();
     }
 
@@ -116,6 +119,72 @@ public class DatabaseInitializer implements ApplicationRunner {
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
                 """);
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS academic_years (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                    starts_on TEXT NOT NULL,
+                    ends_on TEXT NOT NULL,
+                    is_current INTEGER NOT NULL DEFAULT 0 CHECK (is_current IN (0, 1)),
+                    CHECK (starts_on <= ends_on)
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_academic_years_one_current
+                ON academic_years(is_current) WHERE is_current = 1
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS class_sections (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    academic_year_id INTEGER NOT NULL REFERENCES academic_years(id) ON DELETE CASCADE,
+                    grade TEXT NOT NULL,
+                    name TEXT NOT NULL COLLATE NOCASE,
+                    room TEXT,
+                    UNIQUE(academic_year_id, grade, name)
+                )
+                """);
+        jdbcTemplate.execute("""
+                CREATE TABLE IF NOT EXISTS student_enrollments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+                    academic_year_id INTEGER NOT NULL REFERENCES academic_years(id) ON DELETE CASCADE,
+                    class_section_id INTEGER NOT NULL REFERENCES class_sections(id) ON DELETE RESTRICT,
+                    status TEXT NOT NULL DEFAULT 'ENROLLED'
+                        CHECK (status IN ('ENROLLED', 'COMPLETED', 'WITHDRAWN')),
+                    UNIQUE(student_id, academic_year_id)
+                )
+                """);
+    }
+
+    private void seedAcademicStructure() {
+        jdbcTemplate.update("""
+                INSERT OR IGNORE INTO academic_years (name, starts_on, ends_on, is_current)
+                VALUES ('2026-27', '2026-04-01', '2027-03-31', 1)
+                """);
+        Long academicYearId = jdbcTemplate.query(
+                "SELECT id FROM academic_years WHERE name = '2026-27' COLLATE NOCASE",
+                resultSet -> resultSet.next() ? resultSet.getLong(1) : null
+        );
+        if (academicYearId == null) {
+            throw new IllegalStateException("Could not initialize the 2026-27 academic year.");
+        }
+
+        for (int gradeNumber = 1; gradeNumber <= 12; gradeNumber++) {
+            String grade = "Grade " + gradeNumber;
+            jdbcTemplate.update("""
+                    INSERT OR IGNORE INTO class_sections (academic_year_id, grade, name)
+                    VALUES (?, ?, 'A')
+                    """, academicYearId, grade);
+        }
+        jdbcTemplate.update("""
+                INSERT OR IGNORE INTO student_enrollments (
+                    student_id, academic_year_id, class_section_id, status
+                )
+                SELECT s.id, ?, c.id, 'ENROLLED'
+                FROM students s
+                JOIN class_sections c
+                  ON c.academic_year_id = ? AND c.grade = s.grade AND c.name = 'A'
+                """, academicYearId, academicYearId);
     }
 
     private void seedDemoUsers() {

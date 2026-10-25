@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { apiRequest } from "../api.js";
 
 const demoAccounts = [
@@ -6,6 +6,7 @@ const demoAccounts = [
   { role: "Teacher", username: "teacher@pandey.edu", password: "TeacherDemo2026!" },
   { role: "Guardian", username: "guardian@pandey.edu", password: "GuardianDemo2026!" },
 ];
+const showDemoAccounts = import.meta.env.DEV;
 
 export default function LoginPage({ onLogin }) {
   const [username, setUsername] = useState("");
@@ -71,25 +72,27 @@ export default function LoginPage({ onLogin }) {
             {isSubmitting ? "Signing in..." : "Sign in"}
           </button>
         </form>
-        <details className="demo-accounts">
-          <summary>Local demo accounts</summary>
-          <p>These sample credentials are for local development only.</p>
-          {demoAccounts.map((account) => (
-            <button
-              type="button"
-              key={account.role}
-              className="demo-account"
-              onClick={() => {
-                setUsername(account.username);
-                setPassword(account.password);
-                setError("");
-              }}
-            >
-              <span>{account.role}</span>
-              <span>{account.username}</span>
-            </button>
-          ))}
-        </details>
+        {showDemoAccounts && (
+          <details className="demo-accounts">
+            <summary>Local demo accounts</summary>
+            <p>These sample credentials are for local development only.</p>
+            {demoAccounts.map((account) => (
+              <button
+                type="button"
+                key={account.role}
+                className="demo-account"
+                onClick={() => {
+                  setUsername(account.username);
+                  setPassword(account.password);
+                  setError("");
+                }}
+              >
+                <span>{account.role}</span>
+                <span>{account.username}</span>
+              </button>
+            ))}
+          </details>
+        )}
       </section>
       <p className="login-footer">© 2026 Pandey Technical School</p>
     </main>

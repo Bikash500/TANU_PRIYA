@@ -5,6 +5,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.UUID;
 import java.util.Objects;
 
+import com.brightwood.students.assistant.AiAssistantController.AssistantStatus;
+import com.brightwood.students.school.SchoolStructureController.AcademicYear;
+import com.brightwood.students.school.SchoolStructureController.ClassSection;
+import com.brightwood.students.school.SchoolStructureController.Enrollment;
 import com.brightwood.students.student.Student;
 import org.springframework.lang.NonNull;
 import org.junit.jupiter.api.Test;
@@ -20,7 +24,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = {"school.ai.provider=openai", "school.ai.openai.api-key="})
 class SchoolModulesIntegrationTest {
 
     private static final String DATABASE_PATH = System.getProperty("java.io.tmpdir")
@@ -32,6 +37,37 @@ class SchoolModulesIntegrationTest {
     @DynamicPropertySource
     static void databaseProperties(DynamicPropertyRegistry registry) {
         registry.add("spring.datasource.url", () -> "jdbc:sqlite:" + DATABASE_PATH);
+    }
+
+    @Test
+    void assistantIsAvailableToEveryAuthenticatedRoleAndRequiresProviderConfiguration() {
+        String[][] accounts = {
+                {"admin@pandey.edu", "AdminDemo2026!"},
+                {"teacher@pandey.edu", "TeacherDemo2026!"},
+                {"guardian@pandey.edu", "GuardianDemo2026!"}
+        };
+
+        for (String[] account : accounts) {
+            ResponseEntity<AssistantStatus> status = restTemplate.withBasicAuth(account[0], account[1])
+                    .getForEntity("/api/assistant/status", AssistantStatus.class);
+            assertThat(status.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(Objects.requireNonNull(status.getBody()).configured()).isFalse();
+
+            HttpEntity<String> chatRequest = jsonRequest("""
+                    {"messages":[{"role":"user","content":"Explain fractions simply."}]}
+                    """, account[0], account[1]);
+            ResponseEntity<String> chat = restTemplate.withBasicAuth(account[0], account[1])
+                    .postForEntity("/api/assistant/chat", chatRequest, String.class);
+            assertThat(chat.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+            assertThat(chat.getBody()).contains("not enabled yet");
+        }
+
+        HttpEntity<String> unauthenticatedRequest = jsonRequest("""
+                {"messages":[{"role":"user","content":"Explain fractions simply."}]}
+                """, "admin@pandey.edu", "incorrect-password");
+        ResponseEntity<String> unauthenticatedChat = restTemplate.postForEntity(
+                "/api/assistant/chat", unauthenticatedRequest, String.class);
+        assertThat(unauthenticatedChat.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
     }
 
     @Test
@@ -257,6 +293,93 @@ class SchoolModulesIntegrationTest {
         assertThat(guardianStudentCsv.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(guardianStudentCsv.getBody()).contains(linkedStudent.name());
         assertThat(guardianStudentCsv.getBody()).doesNotContain("Integration Student");
+    }
+
+    @Test
+    void adminCanConfigureAcademicYearsSectionsAndStudentEnrollments() {
+        String admin = "admin@pandey.edu";
+        String yearName = "Test-" + UUID.randomUUID().toString().substring(0, 8);
+        Student student = guardianLinkedStudent();
+        AcademicYear[] existingYears = restTemplate.withBasicAuth(admin, "AdminDemo2026!")
+                .getForObject("/api/school/academic-years", AcademicYear[].class);
+        AcademicYear currentYear = java.util.Arrays.stream(existingYears)
+                .filter(year -> year.isCurrent())
+                .findFirst()
+                .orElseThrow();
+
+        HttpEntity<String> yearRequest = jsonRequest("""
+                {"name":"%s","startsOn":"2027-04-01","endsOn":"2028-03-31"}
+                """.formatted(yearName), admin, "AdminDemo2026!");
+        ResponseEntity<AcademicYear> createdYearResponse = restTemplate.withBasicAuth(admin, "AdminDemo2026!")
+                .postForEntity("/api/school/academic-years", yearRequest, AcademicYear.class);
+        assertThat(createdYearResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        AcademicYear createdYear = Objects.requireNonNull(createdYearResponse.getBody());
+
+        try {
+            HttpEntity<String> sectionRequest = jsonRequest("""
+                    {"academicYearId":%d,"grade":"Grade 8","name":"B","room":"Room 8B"}
+                    """.formatted(createdYear.id()), admin, "AdminDemo2026!");
+            ResponseEntity<ClassSection> createdSectionResponse = restTemplate.withBasicAuth(admin, "AdminDemo2026!")
+                    .postForEntity("/api/school/sections", sectionRequest, ClassSection.class);
+            assertThat(createdSectionResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+            ClassSection section = Objects.requireNonNull(createdSectionResponse.getBody());
+            assertThat(section.room()).isEqualTo("Room 8B");
+
+            HttpEntity<String> sectionUpdateRequest = jsonRequest(
+                    "{\"name\":\"B2\",\"room\":\"Room 8C\"}", admin, "AdminDemo2026!");
+            ResponseEntity<ClassSection> updatedSectionResponse = restTemplate.withBasicAuth(admin, "AdminDemo2026!")
+                    .exchange("/api/school/sections/{id}", HttpMethod.PUT, sectionUpdateRequest,
+                            ClassSection.class, section.id());
+            assertThat(updatedSectionResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+            section = Objects.requireNonNull(updatedSectionResponse.getBody());
+            assertThat(section.name()).isEqualTo("B2");
+
+            HttpEntity<String> enrollmentRequest = jsonRequest("""
+                    {"studentId":%d,"classSectionId":%d}
+                    """.formatted(student.id(), section.id()), admin, "AdminDemo2026!");
+            ResponseEntity<Enrollment> createdEnrollmentResponse = restTemplate.withBasicAuth(admin, "AdminDemo2026!")
+                    .postForEntity("/api/school/enrollments", enrollmentRequest, Enrollment.class);
+            assertThat(createdEnrollmentResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+            Enrollment enrollment = Objects.requireNonNull(createdEnrollmentResponse.getBody());
+            assertThat(enrollment.studentName()).isEqualTo(student.name());
+            assertThat(enrollment.grade()).isEqualTo("Grade 8");
+
+            ResponseEntity<String> sectionWithHistory = restTemplate.withBasicAuth(admin, "AdminDemo2026!")
+                    .exchange("/api/school/sections/{id}", HttpMethod.DELETE, HttpEntity.EMPTY,
+                            String.class, section.id());
+            assertThat(sectionWithHistory.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+
+            ResponseEntity<String> duplicateEnrollment = restTemplate.withBasicAuth(admin, "AdminDemo2026!")
+                    .postForEntity("/api/school/enrollments", enrollmentRequest, String.class);
+            assertThat(duplicateEnrollment.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+
+            ResponseEntity<AcademicYear> activation = restTemplate.withBasicAuth(admin, "AdminDemo2026!")
+                    .exchange("/api/school/academic-years/{id}/activate", HttpMethod.PUT, HttpEntity.EMPTY,
+                            AcademicYear.class, createdYear.id());
+            assertThat(activation.getStatusCode()).isEqualTo(HttpStatus.OK);
+            Student[] updatedStudents = restTemplate.withBasicAuth(admin, "AdminDemo2026!")
+                    .getForObject("/api/students", Student[].class);
+            assertThat(java.util.Arrays.stream(updatedStudents)
+                    .filter(candidate -> candidate.id() == student.id())
+                    .findFirst().orElseThrow().grade()).isEqualTo("Grade 8");
+
+            HttpEntity<String> updateEnrollment = jsonRequest("""
+                    {"classSectionId":%d,"status":"WITHDRAWN"}
+                    """.formatted(section.id()), admin, "AdminDemo2026!");
+            ResponseEntity<Enrollment> updatedEnrollment = restTemplate.withBasicAuth(admin, "AdminDemo2026!")
+                    .exchange("/api/school/enrollments/{id}", HttpMethod.PUT, updateEnrollment,
+                            Enrollment.class, enrollment.id());
+            assertThat(Objects.requireNonNull(updatedEnrollment.getBody()).status()).isEqualTo("WITHDRAWN");
+
+            ResponseEntity<String> teacherStructure = restTemplate.withBasicAuth(
+                            "teacher@pandey.edu", "TeacherDemo2026!")
+                    .getForEntity("/api/school/enrollments?academicYearId={id}", String.class, currentYear.id());
+            assertThat(teacherStructure.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        } finally {
+            restTemplate.withBasicAuth(admin, "AdminDemo2026!")
+                    .exchange("/api/school/academic-years/{id}/activate", HttpMethod.PUT, HttpEntity.EMPTY,
+                            String.class, currentYear.id());
+        }
     }
 
     private Student guardianLinkedStudent() {

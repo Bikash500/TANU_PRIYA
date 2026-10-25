@@ -1,0 +1,14 @@
+.git
+.github
+.vscode
+node_modules
+dist
+coverage
+server/data
+backend/student-service/target
+**/*.sqlite
+**/*.sqlite-shm
+**/*.sqlite-wal
+.env
+.env.*
+!.env.example

@@ -20,7 +20,7 @@ public class SchoolUserDetailsService implements UserDetailsService {
         return jdbcTemplate.query("""
                 SELECT id, username, password_hash, role, student_id
                 FROM users
-                WHERE username = ? COLLATE NOCASE
+                WHERE lower(username) = lower(?)
                 """, resultSet -> {
             if (!resultSet.next()) {
                 throw new UsernameNotFoundException("User account was not found.");
